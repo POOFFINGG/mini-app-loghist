@@ -31,9 +31,8 @@ async def main():
         "phone": DEMO_PHONE,
         "password_hash": hash_password(DEMO_PASSWORD),
         "personal": {
-            "first_name": "Демо",
-            "last_name": "Пользователь",
-            "patronymic": "",
+            "full_name": "Демо Пользователь",
+            "position": "Логист",
         },
         "company": None,
         "bank": None,
