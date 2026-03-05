@@ -11,30 +11,58 @@ APP_NAME="loghist"
 DOMAIN="iilogist.code-master-py.twc1.net"
 BACKEND_PORT=8002
 
-echo "==> [1/9] Обновление системы и зависимостей"
-apt update && apt upgrade -y
-apt install -y curl git nginx python3 python3-pip python3-venv nodejs npm certbot python3-certbot-nginx
+echo "==> [1/9] Исправление кэша APT"
+apt-get clean
+rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock
+apt-get update -o Acquire::CompressionTypes::Order::=gz || apt-get update || true
 
-echo "==> [2/9] Установка MongoDB"
+echo "==> [2/9] Установка базовых зависимостей"
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    curl git nginx python3 python3-pip python3-venv \
+    certbot python3-certbot-nginx
+
+echo "==> [3/9] Установка Node.js"
+if ! command -v node &>/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+fi
+node -v
+
+# npm bundled with nodesource nodejs; may need PATH fix
+if ! command -v npm &>/dev/null; then
+    echo "  npm не найден, восстанавливаю..."
+    NODE_DIR="$(dirname "$(which node)")"
+    if [ -x "$NODE_DIR/npm" ]; then
+        ln -sf "$NODE_DIR/npm" /usr/local/bin/npm
+        ln -sf "$NODE_DIR/npx" /usr/local/bin/npx 2>/dev/null || true
+    else
+        # npm binary not alongside node — reinstall nodejs from nodesource
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y --reinstall nodejs
+    fi
+fi
+npm -v
+
+echo "==> [4/9] Установка MongoDB"
 if ! command -v mongod &>/dev/null; then
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+        | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
     echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
         | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-    apt update && apt install -y mongodb-org
+    apt-get update && apt-get install -y mongodb-org
 fi
 systemctl enable mongod && systemctl start mongod
 
-echo "==> [3/9] Клонирование репозитория"
+echo "==> [5/9] Подготовка приложения"
 rm -rf "$APP_DIR"
 git clone "$REPO" "$APP_DIR"
 cd "$APP_DIR"
 
-echo "==> [4/9] Python venv + зависимости backend"
+echo "==> [6/9] Backend: venv и зависимости"
 python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
-echo "==> [5/9] Создание .env для backend"
 cat > "$APP_DIR/backend/.env" <<EOF
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=loghist
@@ -47,11 +75,11 @@ echo ""
 echo "  !! Добавь в $APP_DIR/backend/.env ключи: OPENAI_API_KEY, BOT_TOKEN и др."
 echo ""
 
-echo "==> [6/9] Сборка React/Vite frontend"
+echo "==> [7/9] Frontend: Сборка"
 npm install --prefix "$APP_DIR"
 npm run build --prefix "$APP_DIR"
 
-echo "==> [7/9] Systemd-сервис для backend"
+echo "==> [8/9] Systemd-сервис для backend"
 cat > /etc/systemd/system/$APP_NAME.service <<EOF
 [Unit]
 Description=LogHist FastAPI Backend
@@ -77,7 +105,7 @@ systemctl daemon-reload
 systemctl enable $APP_NAME
 systemctl restart $APP_NAME
 
-echo "==> [8/9] Nginx — статика + API proxy"
+echo "==> [9/9] Nginx + SSL"
 rm -f /etc/nginx/sites-enabled/default
 cat > /etc/nginx/sites-available/$APP_NAME <<EOF
 server {
@@ -113,12 +141,11 @@ EOF
 ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 
-echo "==> [9/9] SSL (Let's Encrypt)"
 certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN || \
     echo "  Пропущено — настрой SSL вручную: certbot --nginx -d $DOMAIN"
 
 echo ""
-echo "✓ Деплой завершён!"
+echo "Деплой завершён!"
 echo "  Сайт:        https://$DOMAIN"
 echo "  Статус:      systemctl status $APP_NAME"
 echo "  Логи:        journalctl -u $APP_NAME -f"
