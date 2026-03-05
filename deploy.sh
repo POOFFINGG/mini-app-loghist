@@ -13,7 +13,7 @@ BACKEND_PORT=8002
 
 echo "==> [1/9] Обновление системы и зависимостей"
 apt update && apt upgrade -y
-apt install -y curl git nginx python3 python3-pip python3-venv nodejs npm certbot python3-certbot-nginx
+apt install -y curl git nginx python3 python3-pip python3-venv nodejs certbot python3-certbot-nginx
 
 echo "==> [2/9] Установка MongoDB"
 if ! command -v mongod &>/dev/null; then
