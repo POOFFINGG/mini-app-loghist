@@ -1,14 +1,27 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Bot, MessageCircle, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { SupportChat } from "./SupportChat";
 
 interface SupportPageProps {
   onBack: () => void;
+  openChat?: boolean;
 }
 
-export function SupportPage({ onBack }: SupportPageProps) {
+export function SupportPage({ onBack, openChat }: SupportPageProps) {
+  const [showChat, setShowChat] = useState(openChat ?? false);
+
+  useEffect(() => {
+    if (openChat) setShowChat(true);
+  }, [openChat]);
+
+  if (showChat) {
+    return <SupportChat onBack={() => setShowChat(false)} />;
+  }
+
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 h-full flex flex-col">
       <div className="flex items-center gap-4 shrink-0">
@@ -40,7 +53,7 @@ export function SupportPage({ onBack }: SupportPageProps) {
       <ScrollArea className="flex-1 -mx-4 px-4">
         <div className="space-y-4 pb-4">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Частые вопросы</h3>
-          
+
           <Accordion type="single" collapsible className="w-full space-y-2">
             {[
               { q: "Как создать заявку?", a: "Перейдите в раздел 'Новая заявка', заполните форму вручную или воспользуйтесь ИИ-помощником, загрузив фото или текст." },
@@ -62,7 +75,11 @@ export function SupportPage({ onBack }: SupportPageProps) {
 
           <div className="pt-4 border-t border-border/50">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">Связаться с нами</h3>
-            <Button variant="outline" className="w-full justify-between group h-12">
+            <Button
+              variant="outline"
+              className="w-full justify-between group h-12"
+              onClick={() => setShowChat(true)}
+            >
               <span className="flex items-center gap-2">
                 <MessageCircle className="w-4 h-4" /> Написать оператору
               </span>

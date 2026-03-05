@@ -1,147 +1,93 @@
 import { useState } from "react";
-import { 
-  Truck, 
-  Search, 
-  Plus, 
-  MoreVertical, 
-  FileText
-} from "lucide-react";
+import { Truck, Plus, MoreVertical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useToast } from "@/hooks/use-toast";
-
-const initialVehicles = [
-  {
-    id: 1,
-    type: "Тягач",
-    model: "Volvo FH16",
-    plate: "А 777 АА 777",
-    sts: "77 12 345678",
-    pts: "77 12 123456",
-    status: "active"
-  },
-  {
-    id: 2,
-    type: "Прицеп (Тент)",
-    model: "Schmitz Cargobull",
-    plate: "ВЕ 1234 77",
-    sts: "77 12 876543",
-    pts: "77 12 654321",
-    status: "active"
-  }
-];
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listVehicles, createVehicle, deleteVehicle, type Vehicle } from "@/lib/api";
 
 export function VehiclesList() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [vehicles, setVehicles] = useState(initialVehicles);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ brand: "", truck_plate: "", trailer_plate: "", type: "" });
   const { toast } = useToast();
+  const qc = useQueryClient();
 
-  const handleDelete = () => {
-    if (deleteId) {
-      setVehicles(prev => prev.filter(v => v.id !== deleteId));
-      setDeleteId(null);
-      toast({ title: "Транспорт удален" });
-    }
-  };
+  const { data: items = [], isLoading } = useQuery<Vehicle[]>({
+    queryKey: ["vehicles"],
+    queryFn: () => listVehicles(),
+    staleTime: 15000,
+  });
 
-  const filteredItems = vehicles.filter(item => 
-    item.plate.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    item.model.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteVehicle(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["vehicles"] }); toast({ title: "ТС удалено" }); setDeleteId(null); },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => createVehicle(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["vehicles"] }); toast({ title: "ТС добавлено" }); setShowAdd(false); setForm({ brand: "", truck_plate: "", trailer_plate: "", type: "" }); },
+    onError: (e: any) => toast({ title: "Ошибка", description: e?.message, variant: "destructive" }),
+  });
 
   return (
     <div className="space-y-4">
-      {/* Action Bar */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Поиск по гос. номеру, марке..." 
-            className="pl-9 bg-white dark:bg-card"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <Button size="icon" className="shrink-0 bg-[#00b3f2] hover:bg-[#009bd1]">
-          <Plus className="w-5 h-5" />
-        </Button>
+      <div className="flex justify-end">
+        <Sheet open={showAdd} onOpenChange={setShowAdd}>
+          <SheetTrigger asChild><Button size="icon" className="bg-[#00b3f2] hover:bg-[#009bd1]"><Plus className="w-5 h-5" /></Button></SheetTrigger>
+          <SheetContent>
+            <SheetHeader><SheetTitle>Добавить транспортное средство</SheetTitle></SheetHeader>
+            <div className="mt-6 space-y-4">
+              <div className="space-y-1"><Label>Марка</Label><Input placeholder="Volvo FH..." value={form.brand} onChange={e => setForm(p => ({ ...p, brand: e.target.value }))} /></div>
+              <div className="space-y-1"><Label>Тип ТС</Label><Input placeholder="Тент, Реф, Борт..." value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} /></div>
+              <div className="space-y-1"><Label>Гос. номер тягача</Label><Input placeholder="А 123 АА 77" value={form.truck_plate} onChange={e => setForm(p => ({ ...p, truck_plate: e.target.value }))} /></div>
+              <div className="space-y-1"><Label>Гос. номер прицепа</Label><Input placeholder="АВ 1234 77" value={form.trailer_plate} onChange={e => setForm(p => ({ ...p, trailer_plate: e.target.value }))} /></div>
+              <Button className="w-full bg-[#00b3f2] hover:bg-[#009bd1]" disabled={createMutation.isPending || !form.truck_plate}
+                onClick={() => createMutation.mutate(form)}>
+                {createMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Добавить"}
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
-
-      {/* List */}
-      <div className="grid gap-3">
-        {filteredItems.length === 0 ? (
-          <EmptyState 
-            title="Транспорт не найден" 
-            description="Попробуйте изменить поиск или добавьте ТС" 
-            icon={Truck}
-          />
-        ) : (
-          filteredItems.map((item) => (
-            <Card key={item.id} className="p-4 flex flex-col gap-3 hover:shadow-md transition-shadow cursor-pointer">
-               <div className="flex justify-between items-start">
-                 <div className="flex gap-3">
-                   <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0 text-purple-600">
-                     <Truck className="w-5 h-5" />
-                   </div>
-                   <div>
-                     <h3 className="font-bold text-sm leading-tight">{item.model}</h3>
-                     <p className="text-xs text-muted-foreground mt-1 font-mono bg-secondary/50 px-1.5 py-0.5 rounded inline-block">
-                       {item.plate}
-                     </p>
-                   </div>
-                 </div>
-                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Редактировать</DropdownMenuItem>
-                      <DropdownMenuItem>Документы (СТС/ПТС)</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-destructive"
-                        onClick={() => setDeleteId(item.id)}
-                      >
-                        Удалить
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-               </div>
-
-               <div className="flex flex-wrap gap-2 text-xs pt-1">
-                  <Badge variant="outline" className="font-normal text-muted-foreground">{item.type}</Badge>
-                  <div className="flex items-center gap-1 ml-auto text-muted-foreground">
-                     <FileText className="w-3 h-3" /> СТС: {item.sts}
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <div className="grid gap-3">
+          {items.length === 0 ? (
+            <EmptyState title="ТС не найдены" description="Добавьте первое транспортное средство" icon={Truck} />
+          ) : (
+            items.map(item => (
+              <Card key={item.id} className="p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
+                <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0 text-orange-600"><Truck className="w-5 h-5" /></div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-sm">{item.brand ?? item.truck_plate}</h3>
+                  <div className="flex gap-2 mt-1">
+                    <span className="text-xs bg-secondary px-2 py-0.5 rounded font-mono">{item.truck_plate}</span>
+                    {item.trailer_plate && <span className="text-xs bg-secondary px-2 py-0.5 rounded font-mono">{item.trailer_plate}</span>}
                   </div>
-               </div>
-            </Card>
-          ))
-        )}
-      </div>
-
-      <ConfirmDialog 
-        open={!!deleteId} 
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Удалить транспортное средство?"
-        description="Это действие нельзя отменить."
-        onConfirm={handleDelete}
-        variant="destructive"
-        actionLabel="Удалить"
-      />
+                  {item.type && <p className="text-xs text-muted-foreground mt-0.5">{item.type}</p>}
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(item.id)}>Удалить</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+      <ConfirmDialog open={!!deleteId} onOpenChange={o => !o && setDeleteId(null)}
+        title="Удалить ТС?" description="Транспортное средство будет удалено."
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)} variant="destructive" actionLabel="Удалить" />
     </div>
   );
 }

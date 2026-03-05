@@ -1,6 +1,32 @@
-node_modules
-dist
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+backend/.venv/
+backend/venv/
+backend/*.log
+backend/uploads/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+backend.log
+dev.log
+
+# OS
 .DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+nul

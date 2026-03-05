@@ -2,74 +2,83 @@
 set -e
 
 # ─────────────────────────────────────────────
-#  CONFIG — поменяй под себя
+#  LogHist — первичный деплой на сервер
+#  Стек: FastAPI + MongoDB + React/Vite + Nginx
 # ─────────────────────────────────────────────
 REPO="https://github.com/POOFFINGG/mini-app-loghist.git"
-APP_DIR="/home/app"
+APP_DIR="/home/app/loghist"
 APP_NAME="loghist"
-NODE_VERSION="20"
-
-# PostgreSQL
-DB_NAME="loghist_db"
-DB_USER="loghist_user"
-DB_PASS="$(openssl rand -base64 24)"  # генерируется автоматически при первом запуске
-
-# Домен (уже прилинкован)
 DOMAIN="iilogist.code-master-py.twc1.net"
-# ─────────────────────────────────────────────
+BACKEND_PORT=8002
 
-echo "==> [1/8] Обновление системы и установка зависимостей"
+echo "==> [1/9] Обновление системы и зависимостей"
 apt update && apt upgrade -y
-apt install -y curl git nginx postgresql postgresql-contrib
+apt install -y curl git nginx python3 python3-pip python3-venv nodejs npm certbot python3-certbot-nginx
 
-echo "==> [2/8] Установка Node.js $NODE_VERSION"
-curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-apt install -y nodejs
-npm install -g pm2
+echo "==> [2/9] Установка MongoDB"
+if ! command -v mongod &>/dev/null; then
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+        | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    apt update && apt install -y mongodb-org
+fi
+systemctl enable mongod && systemctl start mongod
 
-echo "==> [3/8] Настройка PostgreSQL"
-# Создаём юзера или обновляем пароль если уже существует
-sudo -u postgres psql -c "DO \$\$ BEGIN
-  IF EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER') THEN
-    ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';
-  ELSE
-    CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
-  END IF;
-END \$\$;"
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
-
-export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
-
-echo "==> [4/8] Клонирование репозитория с нуля"
+echo "==> [3/9] Клонирование репозитория"
 rm -rf "$APP_DIR"
 git clone "$REPO" "$APP_DIR"
 cd "$APP_DIR"
 
-echo "==> [5/8] Создание .env"
-cat > "$APP_DIR/.env" <<EOF
-NODE_ENV=production
-PORT=5000
-DATABASE_URL=$DATABASE_URL
-SESSION_SECRET=$(openssl rand -base64 32)
+echo "==> [4/9] Python venv + зависимости backend"
+python3 -m venv "$APP_DIR/backend/.venv"
+"$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
+"$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
+
+echo "==> [5/9] Создание .env для backend"
+cat > "$APP_DIR/backend/.env" <<EOF
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=loghist
+JWT_SECRET=$(openssl rand -hex 32)
+ADMIN_KEY=$(openssl rand -hex 16)
+PORT=$BACKEND_PORT
+ENVIRONMENT=production
+EOF
+echo ""
+echo "  !! Добавь в $APP_DIR/backend/.env ключи: OPENAI_API_KEY, BOT_TOKEN и др."
+echo ""
+
+echo "==> [6/9] Сборка React/Vite frontend"
+npm install --prefix "$APP_DIR"
+npm run build --prefix "$APP_DIR"
+
+echo "==> [7/9] Systemd-сервис для backend"
+cat > /etc/systemd/system/$APP_NAME.service <<EOF
+[Unit]
+Description=LogHist FastAPI Backend
+After=network.target mongod.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=$APP_DIR/backend
+Environment="PATH=$APP_DIR/backend/.venv/bin"
+EnvironmentFile=$APP_DIR/backend/.env
+ExecStart=$APP_DIR/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port $BACKEND_PORT --workers 2
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-echo "==> [6/8] Установка пакетов и сборка"
-cd "$APP_DIR"
-npm install
-npm run build
-npm run db:push
+systemctl daemon-reload
+systemctl enable $APP_NAME
+systemctl restart $APP_NAME
 
-echo "==> [7/8] Запуск через PM2"
-pm2 delete all 2>/dev/null || true
-pm2 start dist/index.cjs --name "$APP_NAME" --env production
-pm2 save
-pm2 startup systemd -u root --hp /root 2>/dev/null || true
-systemctl enable pm2-root 2>/dev/null || true
-
-echo "==> [8/8] Настройка Nginx (reverse proxy)"
+echo "==> [8/9] Nginx — статика + API proxy"
 rm -f /etc/nginx/sites-enabled/default
-rm -f /etc/nginx/sites-enabled/$APP_NAME
 cat > /etc/nginx/sites-available/$APP_NAME <<EOF
 server {
     listen 80;
@@ -77,16 +86,26 @@ server {
 
     client_max_body_size 50M;
 
+    root $APP_DIR/dist/public;
+    index index.html;
+
     location / {
-        proxy_pass         http://127.0.0.1:5000;
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass         http://127.0.0.1:$BACKEND_PORT;
         proxy_http_version 1.1;
-        proxy_set_header   Upgrade \$http_upgrade;
-        proxy_set_header   Connection 'upgrade';
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
         proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 60s;
+    }
+
+    location /uploads/ {
+        alias $APP_DIR/backend/uploads/;
+        expires 7d;
     }
 }
 EOF
@@ -94,8 +113,13 @@ EOF
 ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 
+echo "==> [9/9] SSL (Let's Encrypt)"
+certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN || \
+    echo "  Пропущено — настрой SSL вручную: certbot --nginx -d $DOMAIN"
+
 echo ""
 echo "✓ Деплой завершён!"
-echo "  Приложение: http://$DOMAIN"
-echo "  PM2 статус: pm2 status"
-echo "  Логи:       pm2 logs $APP_NAME"
+echo "  Сайт:        https://$DOMAIN"
+echo "  Статус:      systemctl status $APP_NAME"
+echo "  Логи:        journalctl -u $APP_NAME -f"
+echo "  .env:        $APP_DIR/backend/.env"

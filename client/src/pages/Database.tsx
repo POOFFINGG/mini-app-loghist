@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Users, Truck, FileText, Database as DatabaseIcon } from "lucide-react";
-import { Link } from "wouter";
+import { Users, Truck, FileText, Database as DatabaseIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CounterpartiesList } from "@/components/database/CounterpartiesList";
 import { DriversList } from "@/components/database/DriversList";
@@ -15,11 +14,6 @@ export default function Database() {
   return (
     <div className="min-h-screen pb-24 pt-4 px-4 bg-gray-50/50 dark:bg-background flex flex-col">
       <header className="flex items-center gap-3 mb-6">
-        <Link href="/home">
-          <Button variant="ghost" size="icon" className="rounded-full hover:bg-secondary">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-        </Link>
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
           <DatabaseIcon className="w-5 h-5 text-primary" />
         </div>

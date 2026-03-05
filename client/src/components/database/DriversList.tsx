@@ -1,190 +1,94 @@
 import { useState } from "react";
-import { 
-  User, 
-  Search, 
-  Plus, 
-  MoreVertical, 
-  FileCheck, 
-  Phone,
-  Copy
-} from "lucide-react";
+import { User, Search, Plus, MoreVertical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useToast } from "@/hooks/use-toast";
-
-const initialDrivers = [
-  {
-    id: 1,
-    name: "Иванов Иван Иванович",
-    phone: "+7 (999) 123-45-67",
-    license: "99 12 345678 (CE)",
-    passport: "4512 123456",
-    status: "active",
-    docsValid: true
-  },
-  {
-    id: 2,
-    name: "Сидоров Петр Петрович",
-    phone: "+7 (999) 765-43-21",
-    license: "99 12 876543 (B, C)",
-    passport: "4512 654321",
-    status: "inactive",
-    docsValid: false
-  }
-];
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listDrivers, createDriver, deleteDriver, type Driver } from "@/lib/api";
 
 export function DriversList() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [drivers, setDrivers] = useState(initialDrivers);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ full_name: "", phone: "", license_number: "" });
   const { toast } = useToast();
+  const qc = useQueryClient();
 
-  const handleDelete = () => {
-    if (deleteId) {
-      setDrivers(prev => prev.filter(d => d.id !== deleteId));
-      setDeleteId(null);
-      toast({ title: "Водитель удален" });
-    }
-  };
+  const { data: items = [], isLoading } = useQuery<Driver[]>({
+    queryKey: ["drivers", searchTerm],
+    queryFn: () => listDrivers(searchTerm || undefined),
+    staleTime: 15000,
+  });
 
-  const handleCopy = (text: string, type: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ 
-      title: "Скопировано",
-      description: `${type} скопирован в буфер обмена`
-    });
-  };
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteDriver(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["drivers"] }); toast({ title: "Водитель удалён" }); setDeleteId(null); },
+  });
 
-  const filteredItems = drivers.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    item.phone.includes(searchTerm)
-  );
+  const createMutation = useMutation({
+    mutationFn: (data: any) => createDriver(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["drivers"] }); toast({ title: "Водитель добавлен" }); setShowAdd(false); setForm({ full_name: "", phone: "", license_number: "" }); },
+    onError: (e: any) => toast({ title: "Ошибка", description: e?.message, variant: "destructive" }),
+  });
 
   return (
     <div className="space-y-4">
-      {/* Action Bar */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Поиск по ФИО, телефону..." 
-            className="pl-9 bg-white dark:bg-card"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <Input placeholder="Поиск по ФИО..." className="pl-9 bg-white dark:bg-card" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
-        <Button size="icon" className="shrink-0 bg-[#00b3f2] hover:bg-[#009bd1]">
-          <Plus className="w-5 h-5" />
-        </Button>
+        <Sheet open={showAdd} onOpenChange={setShowAdd}>
+          <SheetTrigger asChild><Button size="icon" className="shrink-0 bg-[#00b3f2] hover:bg-[#009bd1]"><Plus className="w-5 h-5" /></Button></SheetTrigger>
+          <SheetContent>
+            <SheetHeader><SheetTitle>Добавить водителя</SheetTitle></SheetHeader>
+            <div className="mt-6 space-y-4">
+              <div className="space-y-1"><Label>ФИО</Label><Input placeholder="Иванов Иван Иванович" value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} /></div>
+              <div className="space-y-1"><Label>Телефон</Label><Input placeholder="+7..." value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div className="space-y-1"><Label>Номер вод. удостоверения</Label><Input placeholder="99 АА 123456" value={form.license_number} onChange={e => setForm(p => ({ ...p, license_number: e.target.value }))} /></div>
+              <Button className="w-full bg-[#00b3f2] hover:bg-[#009bd1]" disabled={createMutation.isPending || !form.full_name}
+                onClick={() => createMutation.mutate(form)}>
+                {createMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Добавить"}
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
-
-      {/* List */}
-      <div className="grid gap-3">
-        {filteredItems.length === 0 ? (
-          <EmptyState 
-            title="Водители не найдены" 
-            description="Попробуйте изменить поиск или добавьте нового водителя" 
-            icon={User}
-          />
-        ) : (
-          filteredItems.map((item) => (
-            <Card key={item.id} className="p-4 flex flex-col gap-3 hover:shadow-md transition-shadow cursor-pointer">
-               <div className="flex justify-between items-start">
-                 <div className="flex gap-3">
-                   <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-primary">
-                     <User className="w-5 h-5" />
-                   </div>
-                   <div>
-                     <h3 className="font-bold text-sm leading-tight">{item.name}</h3>
-                     <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                       <Phone className="w-3 h-3" /> {item.phone}
-                     </p>
-                   </div>
-                 </div>
-                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Редактировать</DropdownMenuItem>
-                      <DropdownMenuItem>Документы</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-destructive"
-                        onClick={() => setDeleteId(item.id)}
-                      >
-                        Удалить
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-               </div>
-
-               <div className="flex flex-wrap gap-2 text-xs">
-                  <div className="group/badge relative inline-flex">
-                    <Badge variant="secondary" className="font-normal text-muted-foreground pr-8">ВУ: {item.license}</Badge>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleCopy(item.license, 'Номер ВУ'); }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover/badge:opacity-100 transition-opacity"
-                      title="Копировать"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <div className="group/badge relative inline-flex">
-                    <Badge variant="secondary" className="font-normal text-muted-foreground pr-8">Паспорт: {item.passport}</Badge>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleCopy(item.passport, 'Номер паспорта'); }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover/badge:opacity-100 transition-opacity"
-                      title="Копировать"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-               </div>
-
-               <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                  <div className="flex items-center gap-1.5 text-xs font-medium">
-                     {item.docsValid ? (
-                       <span className="text-green-600 flex items-center gap-1">
-                         <FileCheck className="w-3 h-3" /> Документы в порядке
-                       </span>
-                     ) : (
-                       <span className="text-red-500 flex items-center gap-1">
-                         <FileCheck className="w-3 h-3" /> Истекает срок
-                       </span>
-                     )}
-                  </div>
-                  <Button variant="outline" size="sm" className="h-7 text-xs rounded-full border-primary/20 hover:bg-primary/5 hover:border-primary/40 text-primary">
-                    Загрузить скан
-                  </Button>
-               </div>
-            </Card>
-          ))
-        )}
-      </div>
-
-      <ConfirmDialog 
-        open={!!deleteId} 
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Удалить водителя?"
-        description="Это действие нельзя отменить."
-        onConfirm={handleDelete}
-        variant="destructive"
-        actionLabel="Удалить"
-      />
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <div className="grid gap-3">
+          {items.length === 0 ? (
+            <EmptyState title="Водители не найдены" description="Добавьте первого водителя" icon={User} />
+          ) : (
+            items.map(item => (
+              <Card key={item.id} className="p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
+                <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0 text-green-600"><User className="w-5 h-5" /></div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-sm">{item.full_name}</h3>
+                  {item.phone && <p className="text-xs text-muted-foreground mt-0.5">{item.phone}</p>}
+                  {item.license_number && <p className="text-xs text-muted-foreground">Вод. уд.: {item.license_number}</p>}
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(item.id)}>Удалить</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+      <ConfirmDialog open={!!deleteId} onOpenChange={o => !o && setDeleteId(null)}
+        title="Удалить водителя?" description="Паспортные данные будут удалены без возможности восстановления."
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)} variant="destructive" actionLabel="Удалить" />
     </div>
   );
 }

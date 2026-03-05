@@ -13,7 +13,7 @@ export function BottomNav() {
     { icon: User, label: "Профиль", path: "/profile" },
   ];
 
-  if (location === "/" || location === "/onboarding" || location === "/auth" || location === "/register") return null;
+  if (location === "/" || location === "/onboarding" || location === "/auth" || location === "/register" || location === "/create-request") return null;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-[400px] z-50">

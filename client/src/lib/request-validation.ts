@@ -2,15 +2,15 @@ import { z } from "zod";
 
 // --- 1. General Data ---
 export const generalDataSchema = z.object({
-  requestId: z.string().optional(), // Auto-generated
-  createdAt: z.date().optional(),   // Auto-generated
+  requestId: z.string().optional(),
+  createdAt: z.date().optional(),
   transportType: z.enum(["FTL", "LTL", "Combined"]),
   senderContact: z.string().min(2, "Укажите контактное лицо отправителя"),
   receiverContact: z.string().min(2, "Укажите контактное лицо получателя"),
   comment: z.string().optional(),
 });
 
-// --- 2. Counterparty ---
+// --- 2. Counterparty (optional in form) ---
 export const counterpartySchema = z.object({
   name: z.string().min(2, "Название контрагента обязательно"),
   inn: z.string().regex(/^\d{10,12}$/, "ИНН должен содержать 10 или 12 цифр").optional().or(z.literal("")),
@@ -19,11 +19,11 @@ export const counterpartySchema = z.object({
 
 // --- 3. Route ---
 export const routePointSchema = z.object({
-  address: z.string().min(5, "Адрес обязателен"),
+  address: z.string().min(3, "Адрес обязателен"),
   contactPerson: z.string().optional(),
   contactPhone: z.string().optional(),
-  date: z.date({ required_error: "Выберите дату" }),
-  time: z.string().optional(), // "HH:mm"
+  date: z.date().optional(),
+  time: z.string().optional(),
 });
 
 export const routeSchema = z.object({
@@ -35,33 +35,33 @@ export const routeSchema = z.object({
 // --- 4. Cargo ---
 export const cargoSchema = z.object({
   name: z.string().min(2, "Наименование груза обязательно"),
-  packageType: z.string().optional(), // Pallets, boxes, etc.
-  weight: z.number().min(0.1, "Укажите вес"),
-  volume: z.number().min(0.1, "Укажите объем"),
-  quantity: z.number().int().min(1, "Количество мест").optional(),
-  conditions: z.array(z.string()).optional(), // Temp, ADR, etc.
+  packageType: z.string().optional(),
+  weight: z.number().min(0, "Укажите вес").optional(),
+  volume: z.number().min(0, "Укажите объем").optional(),
+  quantity: z.number().int().min(1).optional(),
+  conditions: z.array(z.string()).optional(),
 });
 
 // --- 5. Transport ---
 export const transportSchema = z.object({
-  type: z.string().min(2, "Тип ТС обязателен"),
+  type: z.string().optional(),
   brand: z.string().optional(),
-  truckPlate: z.string().min(1, "Гос. номер тягача обязателен"),
-  trailerPlate: z.string().optional(),
+  plateTractor: z.string().optional(),
+  plateTrailer: z.string().optional(),
 });
 
 // --- 6. Driver ---
 export const driverSchema = z.object({
   fullName: z.string().min(2, "ФИО водителя обязательно"),
-  passport: z.string().min(5, "Паспортные данные обязательны"),
-  license: z.string().min(5, "В/У обязательно"),
-  phone: z.string().min(10, "Телефон водителя обязателен"),
+  passport: z.string().optional(),
+  license: z.string().optional(),
+  phone: z.string().optional(),
 });
 
 // --- 7. Payment ---
 export const paymentSchema = z.object({
-  rate: z.number().min(0, "Ставка должна быть положительной"),
-  terms: z.string().optional(), // Prepay, postpay...
+  rate: z.number().min(0).optional(),
+  terms: z.string().optional(),
   vat: z.boolean().default(true),
   method: z.string().optional(),
 });
@@ -69,12 +69,12 @@ export const paymentSchema = z.object({
 // --- FULL REQUEST SCHEMA ---
 export const createRequestSchema = z.object({
   general: generalDataSchema,
-  counterparty: counterpartySchema,
+  counterparty: counterpartySchema.optional(),
   route: routeSchema,
   cargo: cargoSchema,
-  transport: transportSchema,
-  driver: driverSchema,
-  payment: paymentSchema,
+  transport: transportSchema.optional(),
+  driver: driverSchema.optional(),
+  payment: paymentSchema.optional(),
 });
 
 export type CreateRequestValues = z.infer<typeof createRequestSchema>;

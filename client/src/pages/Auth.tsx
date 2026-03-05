@@ -10,38 +10,33 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { login, setTokens } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { refetchUser } = useAuth();
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      emailOrPhone: "",
-      password: "",
-    },
+    defaultValues: { emailOrPhone: "", password: "" },
   });
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
-      // Mock login simulation
-      console.log("Login data:", data);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast({
-        title: "Успешный вход",
-        description: "Добро пожаловать в систему",
-      });
-      
+      const tokens = await login(data.emailOrPhone, data.password);
+      setTokens(tokens.access_token, tokens.refresh_token);
+      await refetchUser();
+      toast({ title: "Успешный вход", description: "Добро пожаловать в систему" });
       setLocation("/home");
-    } catch (error) {
+    } catch (error: any) {
       toast({
-        title: "Ошибка",
-        description: "Неверный логин или пароль",
+        title: "Ошибка входа",
+        description: error?.message || "Неверный логин или пароль",
         variant: "destructive",
       });
     } finally {
@@ -57,9 +52,7 @@ export default function Auth() {
             <img src={logo} alt="Логист ИИ" className="h-12 w-auto object-contain" />
           </div>
           <CardTitle className="text-2xl text-center">Вход в систему</CardTitle>
-          <CardDescription className="text-center">
-            Введите ваши данные для доступа
-          </CardDescription>
+          <CardDescription className="text-center">Введите ваши данные для доступа</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -85,11 +78,11 @@ export default function Auth() {
                     <FormLabel>Пароль</FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <Input 
+                        <Input
                           className="text-base py-6 pr-12"
-                          type={showPassword ? "text" : "password"} 
-                          placeholder="••••••" 
-                          {...field} 
+                          type={showPassword ? "text" : "password"}
+                          placeholder="••••••"
+                          {...field}
                         />
                         <Button
                           type="button"
@@ -98,11 +91,7 @@ export default function Auth() {
                           className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                           onClick={() => setShowPassword(!showPassword)}
                         >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                          )}
+                          {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
                         </Button>
                       </div>
                     </FormControl>
@@ -111,14 +100,7 @@ export default function Auth() {
                 )}
               />
               <Button type="submit" className="w-full text-base py-6 mt-2" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Вход...
-                  </>
-                ) : (
-                  "Войти"
-                )}
+                {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Вход...</> : "Войти"}
               </Button>
             </form>
           </Form>
@@ -126,9 +108,7 @@ export default function Auth() {
         <CardFooter className="flex justify-center">
           <p className="text-sm text-muted-foreground">
             Нет аккаунта?{" "}
-            <Link href="/register" className="text-primary font-medium hover:underline">
-              Зарегистрироваться
-            </Link>
+            <Link href="/register" className="text-primary font-medium hover:underline">Зарегистрироваться</Link>
           </p>
         </CardFooter>
       </Card>

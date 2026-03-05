@@ -47,5 +47,15 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    proxy: {
+      "/api": {
+        target: "http://localhost:8002",
+        changeOrigin: true,
+      },
+      "/webhook": {
+        target: "http://localhost:8002",
+        changeOrigin: true,
+      },
+    },
   },
 });
