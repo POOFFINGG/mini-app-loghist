@@ -14,34 +14,18 @@ BACKEND_PORT=8002
 echo "==> [1/9] Исправление кэша APT"
 apt-get clean
 rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock
-apt-get update -o Acquire::CompressionTypes::Order::=gz || apt-get update || true
+# Убираем сломанный nodesource репо если есть
+rm -f /etc/apt/sources.list.d/nodesource.list
+apt-get update || true
 
 echo "==> [2/9] Установка базовых зависимостей"
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl git nginx python3 python3-pip python3-venv \
     certbot python3-certbot-nginx
 
-echo "==> [3/9] Установка Node.js"
-if ! command -v node &>/dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
-fi
-node -v
-
-# npm bundled with nodesource nodejs; may need PATH fix
-if ! command -v npm &>/dev/null; then
-    echo "  npm не найден, восстанавливаю..."
-    NODE_DIR="$(dirname "$(which node)")"
-    if [ -x "$NODE_DIR/npm" ]; then
-        ln -sf "$NODE_DIR/npm" /usr/local/bin/npm
-        ln -sf "$NODE_DIR/npx" /usr/local/bin/npx 2>/dev/null || true
-    else
-        # npm binary not alongside node — reinstall nodejs from nodesource
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y --reinstall nodejs
-    fi
-fi
-npm -v
+echo "==> [3/9] Установка Node.js + npm"
+DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+node -v && npm -v
 
 echo "==> [4/9] Установка MongoDB"
 if ! command -v mongod &>/dev/null; then
