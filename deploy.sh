@@ -47,13 +47,18 @@ python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
+JWT_SECRET_VAL=$(openssl rand -hex 32)
+ADMIN_KEY_VAL=$(openssl rand -hex 16)
+
 cat > "$APP_DIR/backend/.env" <<EOF
-MONGO_URI=mongodb://localhost:27017
+MONGO_HOST=localhost
+MONGO_PORT=27017
 MONGO_DB=loghist
-JWT_SECRET=$(openssl rand -hex 32)
-ADMIN_KEY=$(openssl rand -hex 16)
+JWT_SECRET_KEY=${JWT_SECRET_VAL}
+ADMIN_SECRET_KEY=${ADMIN_KEY_VAL}
 PORT=$BACKEND_PORT
 ENVIRONMENT=production
+DEBUG=false
 EOF
 echo ""
 echo "  !! Добавь в $APP_DIR/backend/.env ключи: OPENAI_API_KEY, BOT_TOKEN и др."

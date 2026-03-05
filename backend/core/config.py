@@ -15,16 +15,18 @@ class Settings(BaseSettings):
     # MongoDB
     MONGO_HOST: str = "localhost"
     MONGO_PORT: int = 27017
-    MONGO_APP_USER: str = "loghist_app"
-    MONGO_APP_PASSWORD: str = "app_changeme"
+    MONGO_APP_USER: str = ""
+    MONGO_APP_PASSWORD: str = ""
     MONGO_DB: str = "loghist"
 
     @property
     def MONGO_URI(self) -> str:
-        return (
-            f"mongodb://{self.MONGO_APP_USER}:{self.MONGO_APP_PASSWORD}"
-            f"@{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}?authSource={self.MONGO_DB}"
-        )
+        if self.MONGO_APP_USER and self.MONGO_APP_PASSWORD:
+            return (
+                f"mongodb://{self.MONGO_APP_USER}:{self.MONGO_APP_PASSWORD}"
+                f"@{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}?authSource={self.MONGO_DB}"
+            )
+        return f"mongodb://{self.MONGO_HOST}:{self.MONGO_PORT}"
 
     # Redis
     REDIS_HOST: str = "localhost"
