@@ -14,8 +14,8 @@ BACKEND_PORT=8002
 echo "==> [1/9] Исправление кэша APT"
 apt-get clean
 rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock
-# Убираем сломанный nodesource репо если есть
-rm -f /etc/apt/sources.list.d/nodesource.list
+# Убираем сломанный nodesource репо (может быть с разными именами)
+find /etc/apt/sources.list.d/ -name "*node*" -o -name "*nodesource*" 2>/dev/null | xargs rm -f 2>/dev/null || true
 apt-get update || true
 
 echo "==> [2/9] Установка базовых зависимостей"
