@@ -2,39 +2,50 @@
 set -e
 
 # ─────────────────────────────────────────────
-#  LogHist — первичный деплой на сервер
+#  LogHist — исправленный деплой
 #  Стек: FastAPI + MongoDB + React/Vite + Nginx
 # ─────────────────────────────────────────────
+
 REPO="https://github.com/POOFFINGG/mini-app-loghist.git"
 APP_DIR="/home/app/loghist"
 APP_NAME="loghist"
 DOMAIN="iilogist.code-master-py.twc1.net"
 BACKEND_PORT=8002
 
-echo "==> [1/9] Обновление системы и зависимостей"
+echo "==> [1/9] Очистка кэша и обновление системы"
+# Исправляем проблему "unexpected size" путем полной очистки списков
+rm -rf /var/lib/apt/lists/*
 apt update && apt upgrade -y
-apt install -y curl git nginx python3 python3-pip python3-venv nodejs certbot python3-certbot-nginx
 
-echo "==> [2/9] Установка MongoDB"
+# Устанавливаем зависимости (БЕЗ npm, так как он идет в составе nodejs)
+apt install -y curl git nginx python3 python3-pip python3-venv certbot python3-certbot-nginx
+
+echo "==> [2/9] Установка Node.js (NodeSource)"
+if ! command -v node &>/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt install -y nodejs
+fi
+
+echo "==> [3/9] Установка MongoDB"
 if ! command -v mongod &>/dev/null; then
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor --yes
     echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
         | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
     apt update && apt install -y mongodb-org
 fi
 systemctl enable mongod && systemctl start mongod
 
-echo "==> [3/9] Клонирование репозитория"
+echo "==> [4/9] Клонирование репозитория"
 rm -rf "$APP_DIR"
 git clone "$REPO" "$APP_DIR"
 cd "$APP_DIR"
 
-echo "==> [4/9] Python venv + зависимости backend"
+echo "==> [5/9] Python venv + зависимости backend"
 python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
-echo "==> [5/9] Создание .env для backend"
+echo "==> [6/9] Настройка .env"
 cat > "$APP_DIR/backend/.env" <<EOF
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=loghist
@@ -43,15 +54,13 @@ ADMIN_KEY=$(openssl rand -hex 16)
 PORT=$BACKEND_PORT
 ENVIRONMENT=production
 EOF
-echo ""
-echo "  !! Добавь в $APP_DIR/backend/.env ключи: OPENAI_API_KEY, BOT_TOKEN и др."
-echo ""
 
-echo "==> [6/9] Сборка React/Vite frontend"
+echo "==> [7/9] Сборка Frontend"
+# Используем npm, который установился вместе с nodejs
 npm install --prefix "$APP_DIR"
 npm run build --prefix "$APP_DIR"
 
-echo "==> [7/9] Systemd-сервис для backend"
+echo "==> [8/9] Systemd сервис"
 cat > /etc/systemd/system/$APP_NAME.service <<EOF
 [Unit]
 Description=LogHist FastAPI Backend
@@ -66,8 +75,6 @@ EnvironmentFile=$APP_DIR/backend/.env
 ExecStart=$APP_DIR/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port $BACKEND_PORT --workers 2
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -77,16 +84,13 @@ systemctl daemon-reload
 systemctl enable $APP_NAME
 systemctl restart $APP_NAME
 
-echo "==> [8/9] Nginx — статика + API proxy"
-rm -f /etc/nginx/sites-enabled/default
+echo "==> [9/9] Nginx и SSL"
 cat > /etc/nginx/sites-available/$APP_NAME <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
 
-    client_max_body_size 50M;
-
-    root $APP_DIR/dist/public;
+    root $APP_DIR/dist;
     index index.html;
 
     location / {
@@ -94,32 +98,18 @@ server {
     }
 
     location /api/ {
-        proxy_pass         http://127.0.0.1:$BACKEND_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header   Host \$host;
-        proxy_set_header   X-Real-IP \$remote_addr;
-        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-    }
-
-    location /uploads/ {
-        alias $APP_DIR/backend/uploads/;
-        expires 7d;
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOF
 
 ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-echo "==> [9/9] SSL (Let's Encrypt)"
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN || \
-    echo "  Пропущено — настрой SSL вручную: certbot --nginx -d $DOMAIN"
+# Попытка выпустить SSL, если домен направлен на IP
+certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN || echo "SSL не установлен автоматически."
 
-echo ""
-echo "✓ Деплой завершён!"
-echo "  Сайт:        https://$DOMAIN"
-echo "  Статус:      systemctl status $APP_NAME"
-echo "  Логи:        journalctl -u $APP_NAME -f"
-echo "  .env:        $APP_DIR/backend/.env"
+echo "✓ Готово! Проверьте статус: systemctl status $APP_NAME"
